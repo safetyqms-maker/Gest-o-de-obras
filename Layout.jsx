@@ -24,7 +24,7 @@ export default function Layout() {
   const Sidebar = () => (
     <nav style={{ width: 220, background: C.panel, borderRight: `1px solid ${C.border}`,
                   padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4,
-                  height: '100%', flexShrink: 0, overflowY: 'auto' }}>
+                  height: '100vh', flexShrink: 0, overflowY: 'auto', position: 'sticky', top: 0 }}>
       <div style={{ padding: '0 6px 20px', borderBottom: `1px solid ${C.card}`, marginBottom: 8 }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: C.white, letterSpacing: '-0.02em' }}>Igor Santana</div>
         <div style={{ fontSize: 11, color: C.gray, marginTop: 2 }}>Gestor de Obras</div>
@@ -32,7 +32,7 @@ export default function Layout() {
       {NAV.map(({ to, icon: Icon, label }) => {
         const active = to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to);
         return (
-          <NavLink key={to} to={to} style={navStyle(active)} onClick={() => setOpen(false)}>
+          <NavLink key={to} to={to} style={navStyle(active)}>
             <Icon size={16} /> {label}
           </NavLink>
         );
@@ -41,64 +41,59 @@ export default function Layout() {
   );
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: C.bg }}>
+    <>
+      <style>{`
+        html, body, #root { height: 100%; margin: 0; padding: 0; }
+        .app-shell { display: flex; height: 100vh; background: ${C.bg}; overflow: hidden; }
+        .sidebar-desktop { display: none; }
+        .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+                  background: ${C.panel}; border-bottom: 1px solid ${C.border};
+                  padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+        .main-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding-top: 48px; }
+        @media (min-width: 768px) {
+          .sidebar-desktop { display: flex !important; }
+          .topbar { display: none !important; }
+          .main-scroll { padding-top: 0 !important; }
+        }
+      `}</style>
 
-      {/* Sidebar desktop */}
-      <div style={{ display: 'none' }} className="desktop-sidebar">
-        <Sidebar />
-      </div>
+      <div className="app-shell">
+        <div className="sidebar-desktop"><Sidebar /></div>
 
-      {/* Top bar mobile */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
-                    background: C.panel, borderBottom: `1px solid ${C.border}`,
-                    padding: '10px 16px', display: 'flex', alignItems: 'center',
-                    justifyContent: 'space-between' }}>
-        <div>
-          <span style={{ fontSize: 14, fontWeight: 700, color: C.white }}>Igor Santana</span>
-          <span style={{ fontSize: 11, color: C.gray, marginLeft: 8 }}>Gestor de Obras</span>
-        </div>
-        <button onClick={() => setOpen(!open)}
-          style={{ background: 'none', border: 'none', color: C.gray, cursor: 'pointer', padding: 4 }}>
-          {open ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
-
-      {/* Drawer mobile */}
-      {open && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)}>
-          <div style={{ position: 'absolute', top: 48, left: 0, bottom: 0, width: 220,
-                        background: C.panel, borderRight: `1px solid ${C.border}`,
-                        padding: '12px', display: 'flex', flexDirection: 'column', gap: 4 }}
-               onClick={e => e.stopPropagation()}>
-            <div style={{ height: 12 }} />
-            {NAV.map(({ to, icon: Icon, label }) => {
-              const active = to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to);
-              return (
-                <NavLink key={to} to={to} style={navStyle(active)} onClick={() => setOpen(false)}>
-                  <Icon size={16} /> {label}
-                </NavLink>
-              );
-            })}
+        <div className="topbar">
+          <div>
+            <span style={{ fontSize: 14, fontWeight: 700, color: C.white }}>Igor Santana</span>
+            <span style={{ fontSize: 11, color: C.gray, marginLeft: 8 }}>Gestor de Obras</span>
           </div>
+          <button onClick={() => setOpen(!open)}
+            style={{ background: 'none', border: 'none', color: C.gray, cursor: 'pointer', padding: 4 }}>
+            {open ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
-      )}
 
-      {/* Conteúdo principal — scroll habilitado */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden',
-                    paddingTop: 48, minHeight: 0, minWidth: 0 }}>
-        <style>{`
-          @media (min-width: 768px) {
-            .desktop-sidebar { display: flex !important; }
-          }
-          @media (min-width: 768px) {
-            .main-content { padding-top: 0 !important; }
-          }
-        `}</style>
-        <div className="main-content" style={{ paddingTop: 48 }}>
+        {open && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)}>
+            <div style={{ position: 'absolute', top: 48, left: 0, bottom: 0, width: 220,
+                          background: C.panel, borderRight: `1px solid ${C.border}`,
+                          padding: '12px', display: 'flex', flexDirection: 'column', gap: 4 }}
+                 onClick={e => e.stopPropagation()}>
+              {NAV.map(({ to, icon: Icon, label }) => {
+                const active = to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to);
+                return (
+                  <NavLink key={to} to={to} style={navStyle(active)} onClick={() => setOpen(false)}>
+                    <Icon size={16} /> {label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="main-scroll">
           <Outlet />
         </div>
       </div>
-
-    </div>
+    </>
   );
 }
+
