@@ -1,0 +1,12 @@
+== VARIÁVEIS DE AMBIENTE — CONFIGURAR NO VERCEL ==
+
+Na tela de Deploy do Vercel, antes de clicar em Deploy,
+adicione estas duas variáveis em "Environment Variables":
+
+Nome: VITE_SUPABASE_URL
+Valor: https://cqfekgygfavsiogzqzho.supabase.co
+
+Nome: VITE_SUPABASE_ANON_KEY
+Valor: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxZmVrZ3lnZmF2c2lvZ3pxemhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNDkyMzcsImV4cCI6MjEwMDYyNTIzN30.4ZVv0oSCF1hdwrMR5VDRbPX0nuC0yVsKt6HfCzvKKh4
+
+IMPORTANTE: Nunca compartilhe a chave sb_secret_ — ela nunca vai para o código.
