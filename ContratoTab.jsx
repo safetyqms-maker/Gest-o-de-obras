@@ -36,10 +36,34 @@ export default function ContratoTab({ obraId }) {
 
   async function handleSave() {
     setSaving(true);
-    const { id, ...rest } = form;
-    if (id) { await supabase.from('contratos_cliente').update(rest).eq('id', id); }
-    else     { await supabase.from('contratos_cliente').insert([{...rest,obra_id:obraId}]); }
-    setSaving(false); setSaved(true); setTimeout(()=>setSaved(false),2000);
+    try {
+      // Garantir que campos numéricos são números
+      const toSave = {
+        ...form,
+        obra_id: obraId,
+        valor_total: Number(form.valor_total) || 0,
+        adiantamento_pct: Number(form.adiantamento_pct) || 0,
+        valor_adiantamento: Number(form.valor_adiantamento) || 0,
+        prazo_pagamento_dd: Number(form.prazo_pagamento_dd) || 30,
+        divisao_estrutura_pct: Number(form.divisao_estrutura_pct) || 0,
+        divisao_montagem_pct: Number(form.divisao_montagem_pct) || 0,
+        divisao_locacao_pct: Number(form.divisao_locacao_pct) || 0,
+      };
+      const { id, ...rest } = toSave;
+      let error;
+      if (id) {
+        ({ error } = await supabase.from('contratos_cliente').update(rest).eq('id', id));
+      } else {
+        const res = await supabase.from('contratos_cliente').insert([rest]).select().single();
+        error = res.error;
+        if (res.data) setForm(res.data);
+      }
+      if (error) { alert('Erro ao salvar contrato: ' + error.message); }
+      else { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    } catch(e) {
+      alert('Erro inesperado: ' + e.message);
+    }
+    setSaving(false);
   }
 
   if (loading||!form) return <div style={{padding:24,color:C.gray}}>Carregando…</div>;
