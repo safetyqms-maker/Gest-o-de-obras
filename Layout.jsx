@@ -1,96 +1,301 @@
-import React, { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, DollarSign, Menu, X } from 'lucide-react';
-import { C } from './theme.js';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Save, ChevronDown, ChevronRight } from 'lucide-react';
+import { supabase } from './supabase.js';
+import { C, s, STATUS_PAG, fmtBRL, fmtDate } from './theme.js';
 
-const NAV = [
-  { to: '/',          icon: LayoutDashboard, label: 'Dashboard'   },
-  { to: '/obras',     icon: FolderKanban,    label: 'Obras & Gantt'},
-  { to: '/financeiro',icon: DollarSign,      label: 'Financeiro'  },
-];
+const TIPOS = ['Montadora','Supervisor','Seguro','Outro'];
 
-export default function Layout() {
-  const [open, setOpen] = useState(false);
-  const loc = useLocation();
+export default function FornecedoresTab({ obraId }) {
+  const [contratos, setContratos] = useState([]);
+  const [pagamentos, setPagamentos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState({});
+  const [editCtId, setEditCtId] = useState(null);
+  const [editCtData, setEditCtData] = useState({});
+  const [addPag, setAddPag] = useState(null);
+  const [newPag, setNewPag] = useState({ evento:'', valor:0, data_vencimento:'', status:'Pendente' });
 
-  const navStyle = (active) => ({
-    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
-    borderRadius: 7, textDecoration: 'none', fontSize: 13, fontWeight: active ? 700 : 500,
-    color: active ? C.white : C.gray,
-    background: active ? C.card : 'transparent',
-    transition: 'all 0.15s',
-  });
+  async function load() {
+    const [{ data: ct }, { data: pg }] = await Promise.all([
+      supabase.from('contratos_fornecedor').select('*').eq('obra_id', obraId).order('created_at'),
+      supabase.from('pagamentos_fornecedor').select('*').eq('obra_id', obraId).order('data_vencimento'),
+    ]);
+    setContratos(ct||[]); setPagamentos(pg||[]); setLoading(false);
+  }
+  useEffect(() => { load(); }, [obraId]);
 
-  const Sidebar = () => (
-    <nav style={{ width: 220, background: C.panel, borderRight: `1px solid ${C.border}`,
-                  padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4,
-                  height: '100%', flexShrink: 0 }}>
-      <div style={{ padding: '0 6px 20px', borderBottom: `1px solid ${C.card}`, marginBottom: 8 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, letterSpacing: '-0.02em' }}>Tibre</div>
-        <div style={{ fontSize: 11, color: C.gray, marginTop: 2 }}>Gestão de Obras</div>
-      </div>
-      {NAV.map(({ to, icon: Icon, label }) => {
-        const active = to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to);
-        return (
-          <NavLink key={to} to={to} style={navStyle(active)} onClick={() => setOpen(false)}>
-            <Icon size={16} /> {label}
-          </NavLink>
-        );
-      })}
-    </nav>
-  );
+  async function addContrato() {
+    const { data, error } = await supabase.from('contratos_fornecedor').insert([{
+      obra_id: obraId, tipo:'Montadora', fornecedor:'Novo fornecedor',
+      pc_tibre:'', valor_contrato:0, prazo_pagamento_dd:15,
+      mobilizacao_pct:0.20, montagem_pct:0.70, retencao_pct:0.10,
+      nf_servico_pct:0.60, nf_locacao_pct:0.40,
+    }]).select().single();
+    if (error) { alert('Erro ao adicionar: ' + error.message); return; }
+    if (data) { setContratos(p=>[...p,data]); setEditCtId(data.id); setEditCtData(data); }
+  }
+
+  async function saveContrato() {
+    const {id,...rest}=editCtData;
+    const { error } = await supabase.from('contratos_fornecedor').update(rest).eq('id',id);
+    if (error) { alert('Erro ao salvar: ' + error.message); return; }
+    setContratos(p=>p.map(c=>c.id===id?{...editCtData}:c));
+    setEditCtId(null);
+    load(); // recarrega do banco para confirmar
+  }
+
+  async function deleteContrato(id) {
+    if (!confirm('Remover este fornecedor e seus pagamentos?')) return;
+    await supabase.from('contratos_fornecedor').delete().eq('id',id);
+    setContratos(p=>p.filter(c=>c.id!==id));
+    setPagamentos(p=>p.filter(pg=>pg.contrato_fornecedor_id!==id));
+  }
+
+  async function addPagamento(contratoId) {
+    const { data } = await supabase.from('pagamentos_fornecedor').insert([{
+      obra_id: obraId, contrato_fornecedor_id: contratoId,
+      evento: newPag.evento, valor: Number(newPag.valor)||0,
+      data_vencimento: newPag.data_vencimento||null, status: newPag.status,
+    }]).select().single();
+    if (data) { setPagamentos(p=>[...p,data]); setAddPag(null); setNewPag({evento:'',valor:0,data_vencimento:'',status:'Pendente'}); }
+  }
+
+  async function toggleStatus(pg) {
+    const next = pg.status==='Pendente'?'Pago':pg.status==='Pago'?'Atrasado':'Pendente';
+    await supabase.from('pagamentos_fornecedor').update({ status:next, data_pagamento:next==='Pago'?new Date().toISOString().slice(0,10):null }).eq('id',pg.id);
+    setPagamentos(p=>p.map(x=>x.id===pg.id?{...x,status:next,data_pagamento:next==='Pago'?new Date().toISOString().slice(0,10):null}:x));
+  }
+
+  const totalContratos = contratos.reduce((s,c)=>s+(c.valor_contrato||0),0);
+  const totalPago      = pagamentos.filter(p=>p.status==='Pago').reduce((s,p)=>s+(p.valor||0),0);
+  const totalPendente  = pagamentos.filter(p=>p.status!=='Pago').reduce((s,p)=>s+(p.valor||0),0);
+
+  if (loading) return <div style={{padding:24,color:C.gray}}>Carregando…</div>;
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: C.bg }}>
-      {/* Desktop sidebar */}
-      <div style={{ display: 'none' }} className="desktop-sidebar">
-        <Sidebar />
-      </div>
-
-      {/* Mobile: top bar + drawer */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
-                    background: C.panel, borderBottom: `1px solid ${C.border}`,
-                    padding: '10px 16px', display: 'flex', alignItems: 'center',
-                    justifyContent: 'space-between' }}>
-        <div>
-          <span style={{ fontSize: 14, fontWeight: 700, color: C.white }}>Tibre</span>
-          <span style={{ fontSize: 11, color: C.gray, marginLeft: 8 }}>Gestão de Obras</span>
-        </div>
-        <button onClick={() => setOpen(!open)} style={{ background: 'none', border: 'none',
-          color: C.gray, cursor: 'pointer', padding: 4 }}>
-          {open ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
-
-      {open && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)}>
-          <div style={{ position: 'absolute', top: 48, left: 0, bottom: 0, width: 220,
-                        background: C.panel, borderRight: `1px solid ${C.border}`,
-                        padding: '12px', display: 'flex', flexDirection: 'column', gap: 4 }}
-               onClick={e => e.stopPropagation()}>
-            <div style={{ height: 12 }} />
-            {NAV.map(({ to, icon: Icon, label }) => {
-              const active = to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to);
-              return (
-                <NavLink key={to} to={to} style={navStyle(active)} onClick={() => setOpen(false)}>
-                  <Icon size={16} /> {label}
-                </NavLink>
-              );
-            })}
+    <div style={{ padding:'20px' }}>
+      {/* KPIs */}
+      <div style={{ display:'flex',flexWrap:'wrap',gap:12,marginBottom:20 }}>
+        {[
+          ['Total Contratado',fmtBRL(totalContratos),C.white],
+          ['Pago Fornecedores',fmtBRL(totalPago),C.green],
+          ['Pendente',fmtBRL(totalPendente),C.amber],
+        ].map(([lbl,val,clr])=>(
+          <div key={lbl} style={{ ...s.card,flex:'1 1 140px',minWidth:140 }}>
+            <div style={{ fontSize:10,color:C.gray,fontWeight:600,textTransform:'uppercase',marginBottom:6 }}>{lbl}</div>
+            <div style={{ fontSize:18,fontWeight:700,color:clr,fontFamily:'IBM Plex Mono' }}>{val}</div>
           </div>
+        ))}
+      </div>
+
+      <button onClick={addContrato}
+        style={{ ...s.btnPrimary,display:'flex',alignItems:'center',gap:6,marginBottom:16 }}>
+        <Plus size={14}/> Adicionar Fornecedor
+      </button>
+
+      {contratos.length===0&&(
+        <div style={{ ...s.card,textAlign:'center',color:C.gray,padding:32 }}>
+          Nenhum fornecedor cadastrado. Adicione montadora, supervisor e seguro.
         </div>
       )}
 
-      {/* Main content */}
-      <div style={{ flex: 1, overflow: 'auto', paddingTop: 48 }}>
-        <style>{`
-          @media (min-width: 768px) {
-            .desktop-sidebar { display: flex !important; }
-            body > #root > div > div:nth-child(3) { padding-top: 0 !important; }
-          }
-        `}</style>
-        <Outlet />
-      </div>
+      {contratos.map(ct=>{
+        const pags = pagamentos.filter(p=>p.contrato_fornecedor_id===ct.id);
+        const isExp = expanded[ct.id];
+        const isEdit = editCtId===ct.id;
+        const totalCtPago = pags.filter(p=>p.status==='Pago').reduce((s,p)=>s+(p.valor||0),0);
+
+        return (
+          <div key={ct.id} style={{ ...s.panel,marginBottom:12,overflow:'hidden' }}>
+            {/* Header fornecedor */}
+            <div style={{ padding:'12px 16px',borderBottom:isExp?`1px solid ${C.card}`:'none',
+                           display:'flex',alignItems:'center',gap:12,flexWrap:'wrap' }}>
+              <button onClick={()=>setExpanded(p=>({...p,[ct.id]:!p[ct.id]}))}
+                style={{ background:'none',border:'none',cursor:'pointer',color:C.gray,padding:2 }}>
+                {isExp?<ChevronDown size={16}/>:<ChevronRight size={16}/>}
+              </button>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ display:'flex',alignItems:'center',gap:8,flexWrap:'wrap' }}>
+                  <span style={{ fontSize:11,fontWeight:700,color:C.cyan,
+                    background:C.cyanBg,padding:'2px 8px',borderRadius:4 }}>{ct.tipo}</span>
+                  <span style={{ fontSize:14,fontWeight:700,color:C.white }}>{ct.fornecedor||'—'}</span>
+                  {ct.pc_tibre&&<span style={{ fontSize:11,color:C.gray,fontFamily:'IBM Plex Mono' }}>PC {ct.pc_tibre}</span>}
+                </div>
+                <div style={{ fontSize:12,color:C.gray,marginTop:2 }}>
+                  Contrato: {fmtBRL(ct.valor_contrato)} · Pagto: {ct.prazo_pagamento_dd}d · Pago: {fmtBRL(totalCtPago)}
+                </div>
+              </div>
+              <div style={{ display:'flex',gap:6 }}>
+                <button onClick={()=>{setEditCtId(ct.id);setEditCtData(ct);}}
+                  style={s.btn}>Editar</button>
+                <button onClick={()=>deleteContrato(ct.id)}
+                  style={s.btnRed}>Remover</button>
+              </div>
+            </div>
+
+            {/* Form edição contrato */}
+            {isEdit&&(
+              <div style={{ padding:16,borderBottom:`1px solid ${C.card}`,background:C.card2 }}>
+
+                {/* Dados básicos */}
+                <div style={{ fontSize:10,color:C.cyan,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8 }}>DADOS DO FORNECEDOR</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10,marginBottom:16 }}>
+                  {[
+                    ['tipo','Tipo','select'],['fornecedor','Fornecedor','text'],
+                    ['pc_tibre','PC Tibre','text'],['valor_contrato','Valor Contrato','number'],
+                    ['prazo_pagamento_dd','Prazo Pagto (dias)','number'],['email_nf','E-mail NF','text'],
+                  ].map(([field,lbl,type])=>(
+                    <div key={field}>
+                      <label style={s.label}>{lbl}</label>
+                      {type==='select'?(
+                        <select style={s.input} value={editCtData[field]||''} onChange={e=>setEditCtData(p=>({...p,[field]:e.target.value}))}>
+                          {TIPOS.map(t=><option key={t}>{t}</option>)}
+                        </select>
+                      ):(
+                        <input type={type==='number'?'number':'text'} style={s.input}
+                          value={editCtData[field]||''}
+                          onChange={e=>setEditCtData(p=>({...p,[field]:type==='number'?Number(e.target.value):e.target.value}))} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Divisão de pagamento */}
+                <div style={{ fontSize:10,color:C.amber,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8 }}>MARCOS DE PAGAMENTO</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16 }}>
+                  {[
+                    ['mobilizacao_pct','Mobilização %',0.20],
+                    ['montagem_pct','Montagem %',0.70],
+                    ['retencao_pct','Retenção %',0.10],
+                  ].map(([field,lbl,def])=>(
+                    <div key={field}>
+                      <label style={s.label}>{lbl}</label>
+                      <input type="number" min="0" max="1" step="0.01" style={s.input}
+                        value={editCtData[field]??def}
+                        onChange={e=>setEditCtData(p=>({...p,[field]:Number(e.target.value)}))} />
+                      <span style={{ fontSize:10,color:C.gray,marginTop:2,display:'block' }}>
+                        = {fmtBRL((editCtData.valor_contrato||0)*(editCtData[field]??def))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Divisão de NF */}
+                <div style={{ fontSize:10,color:C.pink,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8 }}>TIPOS DE NOTA FISCAL</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:16 }}>
+                  {[
+                    ['nf_servico_pct','NF Serviço %',0.60],
+                    ['nf_locacao_pct','NF Locação de Equipamento %',0.40],
+                  ].map(([field,lbl,def])=>(
+                    <div key={field}>
+                      <label style={s.label}>{lbl}</label>
+                      <input type="number" min="0" max="1" step="0.01" style={s.input}
+                        value={editCtData[field]??def}
+                        onChange={e=>setEditCtData(p=>({...p,[field]:Number(e.target.value)}))} />
+                      <span style={{ fontSize:10,color:C.gray,marginTop:2,display:'block' }}>
+                        = {fmtBRL((editCtData.valor_contrato||0)*(editCtData[field]??def))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Resumo */}
+                {editCtData.valor_contrato>0&&(
+                  <div style={{ background:C.bg,borderRadius:7,padding:10,marginBottom:12,display:'flex',gap:8,flexWrap:'wrap' }}>
+                    {[
+                      ['Mobilização', editCtData.mobilizacao_pct??0.20, C.amber],
+                      ['Montagem',    editCtData.montagem_pct??0.70,    C.green],
+                      ['Retenção',    editCtData.retencao_pct??0.10,    C.red],
+                    ].map(([lbl,pct,clr])=>(
+                      <div key={lbl} style={{ flex:1,minWidth:100 }}>
+                        <div style={{ fontSize:9,color:C.gray,fontWeight:600,textTransform:'uppercase' }}>{lbl}</div>
+                        <div style={{ fontSize:13,fontWeight:700,color:clr,fontFamily:'var(--font-mono)' }}>
+                          {fmtBRL((editCtData.valor_contrato||0)*pct)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display:'flex',gap:8,marginTop:10 }}>
+                  <button onClick={saveContrato} style={{ ...s.btnPrimary,display:'flex',alignItems:'center',gap:6 }}>
+                    <Save size={13}/> Salvar
+                  </button>
+                  <button onClick={()=>setEditCtId(null)} style={s.btn}>Cancelar</button>
+                </div>
+              </div>
+            )}
+
+            {/* Pagamentos */}
+            {isExp&&(
+              <div style={{ padding:16 }}>
+                <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10 }}>
+                  <span style={{ fontSize:12,fontWeight:700,color:C.gray }}>PAGAMENTOS</span>
+                  <button onClick={()=>setAddPag(ct.id)}
+                    style={{ ...s.btn,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'4px 10px' }}>
+                    <Plus size={12}/> Adicionar
+                  </button>
+                </div>
+
+                {addPag===ct.id&&(
+                  <div style={{ background:C.card2,borderRadius:8,padding:12,marginBottom:12 }}>
+                    <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,marginBottom:10 }}>
+                      {[
+                        ['evento','Evento','text'],['valor','Valor','number'],
+                        ['data_vencimento','Vencimento','date'],['status','Status','select'],
+                      ].map(([field,lbl,type])=>(
+                        <div key={field}>
+                          <label style={s.label}>{lbl}</label>
+                          {type==='select'?(
+                            <select style={s.input} value={newPag[field]||''} onChange={e=>setNewPag(p=>({...p,[field]:e.target.value}))}>
+                              {Object.keys(STATUS_PAG).map(k=><option key={k}>{k}</option>)}
+                            </select>
+                          ):(
+                            <input type={type} style={s.input} value={newPag[field]||''}
+                              onChange={e=>setNewPag(p=>({...p,[field]:type==='number'?Number(e.target.value):e.target.value}))} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display:'flex',gap:6 }}>
+                      <button onClick={()=>addPagamento(ct.id)} style={s.btnPrimary}>Salvar</button>
+                      <button onClick={()=>setAddPag(null)} style={s.btn}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
+
+                {pags.length===0&&!addPag&&(
+                  <p style={{ fontSize:12,color:C.gray }}>Nenhum pagamento registrado.</p>
+                )}
+                <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                  {pags.map(pg=>{
+                    const st=STATUS_PAG[pg.status]||{bg:C.card2,fg:C.gray};
+                    const vencido=pg.data_vencimento&&pg.status!=='Pago'&&pg.data_vencimento<new Date().toISOString().slice(0,10);
+                    return (
+                      <div key={pg.id} style={{ display:'flex',alignItems:'center',gap:12,
+                                                  padding:'8px 10px',background:C.bg,borderRadius:6,flexWrap:'wrap' }}>
+                        <div style={{ flex:1,minWidth:0 }}>
+                          <div style={{ fontSize:13,fontWeight:600,color:C.white }}>{pg.evento||'—'}</div>
+                          <div style={{ fontSize:11,color:C.gray }}>
+                            Venc: <span style={{ color:vencido?C.red:C.light }}>{fmtDate(pg.data_vencimento)}</span>
+                            {pg.data_pagamento&&<span style={{ color:C.green }}> · Pago: {fmtDate(pg.data_pagamento)}</span>}
+                          </div>
+                        </div>
+                        <div style={{ fontFamily:'IBM Plex Mono',fontSize:13,fontWeight:700,
+                          color:pg.status==='Pago'?C.green:C.amber }}>{fmtBRL(pg.valor)}</div>
+                        <button onClick={()=>toggleStatus(pg)} style={{ ...s.badge(st.bg,st.fg),cursor:'pointer',border:'none' }}>
+                          {pg.status}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
+
