@@ -25,17 +25,23 @@ export default function FornecedoresTab({ obraId }) {
   useEffect(() => { load(); }, [obraId]);
 
   async function addContrato() {
-    const { data } = await supabase.from('contratos_fornecedor').insert([{
-      obra_id: obraId, tipo:'Montadora', fornecedor:'', pc_tibre:'', valor_contrato:0, prazo_pagamento_dd:15,
+    const { data, error } = await supabase.from('contratos_fornecedor').insert([{
+      obra_id: obraId, tipo:'Montadora', fornecedor:'Novo fornecedor',
+      pc_tibre:'', valor_contrato:0, prazo_pagamento_dd:15,
+      mobilizacao_pct:0.20, montagem_pct:0.70, retencao_pct:0.10,
+      nf_servico_pct:0.60, nf_locacao_pct:0.40,
     }]).select().single();
+    if (error) { alert('Erro ao adicionar: ' + error.message); return; }
     if (data) { setContratos(p=>[...p,data]); setEditCtId(data.id); setEditCtData(data); }
   }
 
   async function saveContrato() {
     const {id,...rest}=editCtData;
-    await supabase.from('contratos_fornecedor').update(rest).eq('id',id);
-    setContratos(p=>p.map(c=>c.id===id?editCtData:c));
+    const { error } = await supabase.from('contratos_fornecedor').update(rest).eq('id',id);
+    if (error) { alert('Erro ao salvar: ' + error.message); return; }
+    setContratos(p=>p.map(c=>c.id===id?{...editCtData}:c));
     setEditCtId(null);
+    load(); // recarrega do banco para confirmar
   }
 
   async function deleteContrato(id) {
@@ -130,7 +136,10 @@ export default function FornecedoresTab({ obraId }) {
             {/* Form edição contrato */}
             {isEdit&&(
               <div style={{ padding:16,borderBottom:`1px solid ${C.card}`,background:C.card2 }}>
-                <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10 }}>
+
+                {/* Dados básicos */}
+                <div style={{ fontSize:10,color:C.cyan,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8 }}>DADOS DO FORNECEDOR</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10,marginBottom:16 }}>
                   {[
                     ['tipo','Tipo','select'],['fornecedor','Fornecedor','text'],
                     ['pc_tibre','PC Tibre','text'],['valor_contrato','Valor Contrato','number'],
@@ -150,6 +159,64 @@ export default function FornecedoresTab({ obraId }) {
                     </div>
                   ))}
                 </div>
+
+                {/* Divisão de pagamento */}
+                <div style={{ fontSize:10,color:C.amber,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8 }}>MARCOS DE PAGAMENTO</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16 }}>
+                  {[
+                    ['mobilizacao_pct','Mobilização %',0.20],
+                    ['montagem_pct','Montagem %',0.70],
+                    ['retencao_pct','Retenção %',0.10],
+                  ].map(([field,lbl,def])=>(
+                    <div key={field}>
+                      <label style={s.label}>{lbl}</label>
+                      <input type="number" min="0" max="1" step="0.01" style={s.input}
+                        value={editCtData[field]??def}
+                        onChange={e=>setEditCtData(p=>({...p,[field]:Number(e.target.value)}))} />
+                      <span style={{ fontSize:10,color:C.gray,marginTop:2,display:'block' }}>
+                        = {fmtBRL((editCtData.valor_contrato||0)*(editCtData[field]??def))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Divisão de NF */}
+                <div style={{ fontSize:10,color:C.pink,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8 }}>TIPOS DE NOTA FISCAL</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:16 }}>
+                  {[
+                    ['nf_servico_pct','NF Serviço %',0.60],
+                    ['nf_locacao_pct','NF Locação de Equipamento %',0.40],
+                  ].map(([field,lbl,def])=>(
+                    <div key={field}>
+                      <label style={s.label}>{lbl}</label>
+                      <input type="number" min="0" max="1" step="0.01" style={s.input}
+                        value={editCtData[field]??def}
+                        onChange={e=>setEditCtData(p=>({...p,[field]:Number(e.target.value)}))} />
+                      <span style={{ fontSize:10,color:C.gray,marginTop:2,display:'block' }}>
+                        = {fmtBRL((editCtData.valor_contrato||0)*(editCtData[field]??def))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Resumo */}
+                {editCtData.valor_contrato>0&&(
+                  <div style={{ background:C.bg,borderRadius:7,padding:10,marginBottom:12,display:'flex',gap:8,flexWrap:'wrap' }}>
+                    {[
+                      ['Mobilização', editCtData.mobilizacao_pct??0.20, C.amber],
+                      ['Montagem',    editCtData.montagem_pct??0.70,    C.green],
+                      ['Retenção',    editCtData.retencao_pct??0.10,    C.red],
+                    ].map(([lbl,pct,clr])=>(
+                      <div key={lbl} style={{ flex:1,minWidth:100 }}>
+                        <div style={{ fontSize:9,color:C.gray,fontWeight:600,textTransform:'uppercase' }}>{lbl}</div>
+                        <div style={{ fontSize:13,fontWeight:700,color:clr,fontFamily:'var(--font-mono)' }}>
+                          {fmtBRL((editCtData.valor_contrato||0)*pct)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div style={{ display:'flex',gap:8,marginTop:10 }}>
                   <button onClick={saveContrato} style={{ ...s.btnPrimary,display:'flex',alignItems:'center',gap:6 }}>
                     <Save size={13}/> Salvar
