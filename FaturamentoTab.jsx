@@ -266,16 +266,31 @@ export default function FaturamentoTab({ obraId }) {
     setEventos((prev) => prev.filter((item) => item.id !== id));
   }
 
- const novo = {
-  ...EMPTY_FORNECEDOR,
-  obra_id: obraId,
-  contrato_fornecedor_id: primeiroContrato.id,
-  evento: 'Nova NF / Despesa',
-  data_emissao: null,
-  data_vencimento: null,
-  data_pagamento: null,
-  valor: 0,
-};
+  async function adicionarFaturamentoFornecedor() {
+    const primeiroContrato = contratosFornecedor[0];
+
+    if (!primeiroContrato) {
+      alert('Cadastre primeiro um fornecedor na aba Fornecedores.');
+      return;
+    }
+
+    const novo = {
+      obra_id: obraId,
+      contrato_fornecedor_id: primeiroContrato.id,
+      evento: 'Nova NF / Despesa',
+      tipo_nf: 'Serviço',
+      nf_numero: null,
+      data_emissao: null,
+      data_recebimento_nf: null,
+      data_vencimento: null,
+      data_pagamento: null,
+      valor_bruto: 0,
+      descontos: 0,
+      valor_liquido: 0,
+      valor_pago: 0,
+      valor: 0,
+      status: 'Pendente',
+      observacoes: null,
     };
 
     const { data, error } = await supabase
@@ -291,7 +306,10 @@ export default function FaturamentoTab({ obraId }) {
 
     setPagamentosFornecedor((prev) => [...prev, data]);
     setEditFornecedorId(data.id);
-    setEditFornecedorData(data);
+    setEditFornecedorData({
+      ...EMPTY_FORNECEDOR,
+      ...data,
+    });
   }
 
   function iniciarEdicaoFornecedor(pagamento) {
@@ -324,6 +342,13 @@ export default function FaturamentoTab({ obraId }) {
 
     const dados = {
       ...editFornecedorData,
+      nf_numero: editFornecedorData.nf_numero || null,
+      data_emissao: editFornecedorData.data_emissao || null,
+      data_recebimento_nf:
+        editFornecedorData.data_recebimento_nf || null,
+      data_vencimento: editFornecedorData.data_vencimento || null,
+      data_pagamento: editFornecedorData.data_pagamento || null,
+      observacoes: editFornecedorData.observacoes || null,
       valor_bruto: bruto,
       descontos,
       valor_liquido: liquido,
