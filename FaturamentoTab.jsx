@@ -1,91 +1,97 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { Plus, Save, Trash2, X } from 'lucide-react';
 import { supabase } from './supabase.js';
-import {
-  C,
-  s,
-  STATUS_FAT,
-  STATUS_PAG,
-  fmtBRL,
-  fmtDate,
-} from './theme.js';
+import { C, s, fmtBRL, fmtDate } from './theme.js';
 
-const TIPOS_NF_CLIENTE = [
-  'Estrutura Metálica',
-  'Serviço de Montagem',
-  'Locação de Equipamentos',
-  'Misto',
-];
-
-const TIPOS_NF_FORNECEDOR = [
-  'Serviço',
-  'Locação',
-  'Material',
-  'Seguro',
-  'Outro',
-];
-
-const EVENTOS_PADRAO = [
-  { evento: 'Adiantamento (20%)', tipo_nf: 'Misto', ordem: 0 },
-  { evento: 'Estrutura (embarque)', tipo_nf: 'Estrutura Metálica', ordem: 1 },
-  { evento: 'Serviço - Integração', tipo_nf: 'Serviço de Montagem', ordem: 2 },
-  { evento: 'Locação - BM Mensal 1', tipo_nf: 'Locação de Equipamentos', ordem: 3 },
-  { evento: 'Locação - BM Mensal 2', tipo_nf: 'Locação de Equipamentos', ordem: 4 },
-  { evento: 'Serviço - Conclusão', tipo_nf: 'Serviço de Montagem', ordem: 5 },
-];
-
-const EMPTY_FORNECEDOR = {
+const EMPTY_FORM = {
+  tipo_movimento: 'entrada',
   contrato_fornecedor_id: '',
+  pagamento_fornecedor_id: '',
+  cliente_fornecedor: '',
   evento: '',
+  competencia: '',
   tipo_nf: 'Serviço',
   nf_numero: '',
   data_emissao: '',
   data_vencimento: '',
-  data_pagamento: '',
+  data_baixa: '',
   valor_bruto: 0,
   descontos: 0,
   valor_liquido: 0,
-  valor_pago: 0,
-  status: 'Pendente',
+  valor_baixado: 0,
+  status: 'Previsto',
   observacoes: '',
 };
 
-function numberValue(value) {
+const STATUS_ENTRADA = [
+  'Previsto',
+  'A emitir',
+  'Emitido',
+  'Enviado ao cliente',
+  'A receber',
+  'Recebido',
+  'Vencido',
+  'Cancelado',
+];
+
+const STATUS_SAIDA = [
+  'Previsto',
+  'NF pendente',
+  'NF recebida',
+  'Em aprovação',
+  'A pagar',
+  'Pago',
+  'Vencido',
+  'Cancelado',
+];
+
+const TIPOS_NF = [
+  'Serviço',
+  'Material',
+  'Locação',
+  'Seguro',
+  'Misto',
+  'Outro',
+];
+
+function num(value) {
   return Number(value) || 0;
 }
 
-export default function FaturamentoTab({ obraId }) {
-  const [eventos, setEventos] = useState([]);
-  const [contrato, setContrato] = useState(null);
+function nullable(value) {
+  return value === '' || value === undefined ? null : value;
+}
 
-  const [contratosFornecedor, setContratosFornecedor] = useState([]);
-  const [pagamentosFornecedor, setPagamentosFornecedor] = useState([]);
+export default function FaturamentoTab({ obraId, obra }) {
+  const [faturamentos, setFaturamentos] = useState([]);
+  const [contratoCliente, setContratoCliente] = useState(null);
+  const [fornecedores, setFornecedores] = useState([]);
+  const [pagamentos, setPagamentos] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [editId, setEditId] = useState(null);
-  const [editData, setEditData] = useState({});
+  const [filtroTipo, setFiltroTipo] = useState('todos');
+  const [filtroFornecedor, setFiltroFornecedor] = useState('todos');
+  const [filtroMes, setFiltroMes] = useState('');
 
-  const [editFornecedorId, setEditFornecedorId] = useState(null);
-  const [editFornecedorData, setEditFornecedorData] = useState({
-    ...EMPTY_FORNECEDOR,
-  });
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ ...EMPTY_FORM });
 
   async function load() {
     setLoading(true);
 
     const [
-      { data: ev, error: evError },
-      { data: ct, error: ctError },
-      { data: fornecedores, error: fornecedoresError },
-      { data: pagamentos, error: pagamentosError },
+      { data: ft, error: ftError },
+      { data: cliente, error: clienteError },
+      { data: contratos, error: contratosError },
+      { data: pagamentosData, error: pagamentosError },
     ] = await Promise.all([
       supabase
-        .from('eventos_faturamento')
+        .from('faturamentos')
         .select('*')
         .eq('obra_id', obraId)
-        .order('ordem'),
+        .order('data_vencimento', { ascending: true }),
 
       supabase
         .from('contratos_cliente')
@@ -97,7 +103,7 @@ export default function FaturamentoTab({ obraId }) {
         .from('contratos_fornecedor')
         .select('*')
         .eq('obra_id', obraId)
-        .order('created_at'),
+        .order('fornecedor'),
 
       supabase
         .from('pagamentos_fornecedor')
@@ -106,17 +112,17 @@ export default function FaturamentoTab({ obraId }) {
         .order('data_vencimento'),
     ]);
 
-    const firstError =
-      evError || ctError || fornecedoresError || pagamentosError;
+    const error =
+      ftError || clienteError || contratosError || pagamentosError;
 
-    if (firstError) {
-      alert(`Erro ao carregar faturamento: ${firstError.message}`);
+    if (error) {
+      alert(`Erro ao carregar faturamento: ${error.message}`);
     }
 
-    setEventos(ev || []);
-    setContrato(ct || null);
-    setContratosFornecedor(fornecedores || []);
-    setPagamentosFornecedor(pagamentos || []);
+    setFaturamentos(ft || []);
+    setContratoCliente(cliente || null);
+    setFornecedores(contratos || []);
+    setPagamentos(pagamentosData || []);
     setLoading(false);
   }
 
@@ -124,396 +130,687 @@ export default function FaturamentoTab({ obraId }) {
     load();
   }, [obraId]);
 
-  async function addEvento() {
-    const ordem = eventos.length;
-
-    const { data, error } = await supabase
-      .from('eventos_faturamento')
-      .insert([
-        {
-          obra_id: obraId,
-          evento: `Evento ${ordem + 1}`,
-          tipo_nf: 'Estrutura Metálica',
-          ordem,
-          valor_bruto: 0,
-          status: 'A emitir',
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      alert(`Erro ao adicionar evento: ${error.message}`);
-      return;
-    }
-
-    setEventos((prev) => [...prev, data]);
-    setEditId(data.id);
-    setEditData(data);
-  }
-
-  async function gerarEventosPadrao() {
-    if (!contrato) return;
-
-    const adiantamentoPct = numberValue(contrato.adiantamento_pct) || 0.2;
-    const valorTotal = numberValue(contrato.valor_total);
-
-    const adiantamento = valorTotal * adiantamentoPct;
-    const estrutura =
-      valorTotal * (numberValue(contrato.divisao_estrutura_pct) || 0.75);
-    const montagem =
-      valorTotal * (numberValue(contrato.divisao_montagem_pct) || 0.15);
-    const locacao =
-      valorTotal * (numberValue(contrato.divisao_locacao_pct) || 0.1);
-
-    const rows = EVENTOS_PADRAO.map((item, index) => {
-      const bruto =
-        index === 0
-          ? adiantamento
-          : index === 1
-            ? estrutura
-            : index === 5
-              ? montagem / 3
-              : locacao / 3;
-
-      const desconto = bruto * adiantamentoPct;
-
-      return {
-        obra_id: obraId,
-        evento: item.evento,
-        tipo_nf: item.tipo_nf,
-        ordem: index,
-        valor_bruto: Math.round(bruto),
-        desconto_adiantamento: Math.round(desconto),
-        valor_liquido: Math.round(bruto - desconto),
-        status: 'A emitir',
-      };
+  function novoFaturamento() {
+    setEditId('novo');
+    setForm({
+      ...EMPTY_FORM,
+      tipo_movimento: 'entrada',
+      cliente_fornecedor: obra?.cliente || obra?.dona_obra || 'Cliente',
     });
-
-    const { error: deleteError } = await supabase
-      .from('eventos_faturamento')
-      .delete()
-      .eq('obra_id', obraId);
-
-    if (deleteError) {
-      alert(`Erro ao recriar eventos: ${deleteError.message}`);
-      return;
-    }
-
-    const { error: insertError } = await supabase
-      .from('eventos_faturamento')
-      .insert(rows);
-
-    if (insertError) {
-      alert(`Erro ao gerar eventos: ${insertError.message}`);
-      return;
-    }
-
-    load();
   }
 
-  function startEdit(evento) {
-    setEditId(evento.id);
-    setEditData({ ...evento });
+  function editarFaturamento(item) {
+    setEditId(item.id);
+    setForm({
+      ...EMPTY_FORM,
+      ...item,
+      contrato_fornecedor_id: item.contrato_fornecedor_id || '',
+      pagamento_fornecedor_id: item.pagamento_fornecedor_id || '',
+      data_emissao: item.data_emissao || '',
+      data_vencimento: item.data_vencimento || '',
+      data_baixa: item.data_baixa || '',
+      competencia: item.competencia || '',
+    });
   }
 
-  async function saveEdit() {
-    setSaving(true);
-
-    const bruto = numberValue(editData.valor_bruto);
-    const adiantamentoPct =
-      numberValue(contrato?.adiantamento_pct) || 0.2;
-    const desconto = contrato ? bruto * adiantamentoPct : 0;
-    const liquido = bruto - desconto;
-
-    const toSave = {
-      ...editData,
-      desconto_adiantamento: Math.round(desconto),
-      valor_liquido: Math.round(liquido),
-    };
-
-    const { error } = await supabase
-      .from('eventos_faturamento')
-      .update(toSave)
-      .eq('id', editId);
-
-    if (error) {
-      alert(`Erro ao salvar evento: ${error.message}`);
-      setSaving(false);
-      return;
-    }
-
-    setEventos((prev) =>
-      prev.map((item) => (item.id === editId ? toSave : item)),
-    );
+  function cancelarEdicao() {
     setEditId(null);
-    setSaving(false);
+    setForm({ ...EMPTY_FORM });
   }
 
-  async function deleteEvento(id) {
-    if (!confirm('Remover este evento?')) return;
+  function alterarCampo(field, value) {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
 
-    const { error } = await supabase
-      .from('eventos_faturamento')
-      .delete()
-      .eq('id', id);
+      if (field === 'valor_bruto' || field === 'descontos') {
+        const bruto =
+          field === 'valor_bruto' ? num(value) : num(prev.valor_bruto);
+        const descontos =
+          field === 'descontos' ? num(value) : num(prev.descontos);
 
-    if (error) {
-      alert(`Erro ao remover evento: ${error.message}`);
-      return;
-    }
+        next.valor_liquido = Math.max(bruto - descontos, 0);
+      }
 
-    setEventos((prev) => prev.filter((item) => item.id !== id));
-  }
+      if (field === 'tipo_movimento') {
+        next.status = value === 'entrada' ? 'Previsto' : 'NF pendente';
+        next.contrato_fornecedor_id = '';
+        next.pagamento_fornecedor_id = '';
+        next.cliente_fornecedor =
+          value === 'entrada'
+            ? obra?.cliente || obra?.dona_obra || 'Cliente'
+            : '';
+      }
 
-  async function adicionarFaturamentoFornecedor() {
-    const primeiroContrato = contratosFornecedor[0];
+      if (field === 'contrato_fornecedor_id') {
+        const fornecedor = fornecedores.find((item) => item.id === value);
+        next.cliente_fornecedor = fornecedor?.fornecedor || '';
+        next.pagamento_fornecedor_id = '';
+      }
 
-    if (!primeiroContrato) {
-      alert('Cadastre primeiro um fornecedor na aba Fornecedores.');
-      return;
-    }
+      if (field === 'pagamento_fornecedor_id') {
+        const pagamento = pagamentos.find((item) => item.id === value);
 
-    const novo = {
-      obra_id: obraId,
-      contrato_fornecedor_id: primeiroContrato.id,
-      evento: 'Nova NF / Despesa',
-      tipo_nf: 'Serviço',
-      nf_numero: null,
-      data_emissao: null,
-      data_recebimento_nf: null,
-      data_vencimento: null,
-      data_pagamento: null,
-      valor_bruto: 0,
-      descontos: 0,
-      valor_liquido: 0,
-      valor_pago: 0,
-      valor: 0,
-      status: 'Pendente',
-      observacoes: null,
-    };
+        if (pagamento) {
+          next.evento = pagamento.evento || next.evento;
+          next.valor_bruto = num(pagamento.valor);
+          next.valor_liquido = num(pagamento.valor);
+          next.data_vencimento =
+            pagamento.data_vencimento || next.data_vencimento;
+        }
+      }
 
-    const { data, error } = await supabase
-      .from('pagamentos_fornecedor')
-      .insert([novo])
-      .select()
-      .single();
-
-    if (error) {
-      alert(`Erro ao adicionar NF: ${error.message}`);
-      return;
-    }
-
-    setPagamentosFornecedor((prev) => [...prev, data]);
-    setEditFornecedorId(data.id);
-    setEditFornecedorData({
-      ...EMPTY_FORNECEDOR,
-      ...data,
+      return next;
     });
   }
 
-  function iniciarEdicaoFornecedor(pagamento) {
-    setEditFornecedorId(pagamento.id);
-    setEditFornecedorData({
-      ...EMPTY_FORNECEDOR,
-      ...pagamento,
-      valor_bruto:
-        pagamento.valor_bruto ??
-        pagamento.valor_liquido ??
-        pagamento.valor ??
-        0,
-      valor_liquido:
-        pagamento.valor_liquido ??
-        pagamento.valor ??
-        0,
-      valor_pago:
-        pagamento.valor_pago ??
-        (pagamento.status === 'Pago' ? pagamento.valor || 0 : 0),
-    });
-  }
+  async function salvar() {
+    if (!form.evento.trim()) {
+      alert('Informe o evento ou a medição.');
+      return;
+    }
 
-  async function salvarFaturamentoFornecedor() {
+    if (
+      form.tipo_movimento === 'saida' &&
+      !form.contrato_fornecedor_id
+    ) {
+      alert('Selecione o fornecedor.');
+      return;
+    }
+
     setSaving(true);
-
-    const bruto = numberValue(editFornecedorData.valor_bruto);
-    const descontos = numberValue(editFornecedorData.descontos);
-    const liquido = Math.max(bruto - descontos, 0);
-    const pago = numberValue(editFornecedorData.valor_pago);
 
     const dados = {
-      ...editFornecedorData,
-      nf_numero: editFornecedorData.nf_numero || null,
-      data_emissao: editFornecedorData.data_emissao || null,
-      data_recebimento_nf:
-        editFornecedorData.data_recebimento_nf || null,
-      data_vencimento: editFornecedorData.data_vencimento || null,
-      data_pagamento: editFornecedorData.data_pagamento || null,
-      observacoes: editFornecedorData.observacoes || null,
-      valor_bruto: bruto,
-      descontos,
-      valor_liquido: liquido,
-      valor: liquido,
-      valor_pago: pago,
+      obra_id: obraId,
+      tipo_movimento: form.tipo_movimento,
+      contrato_fornecedor_id:
+        form.tipo_movimento === 'saida'
+          ? nullable(form.contrato_fornecedor_id)
+          : null,
+      pagamento_fornecedor_id:
+        form.tipo_movimento === 'saida'
+          ? nullable(form.pagamento_fornecedor_id)
+          : null,
+      cliente_fornecedor: form.cliente_fornecedor || null,
+      evento: form.evento.trim(),
+      competencia: nullable(form.competencia),
+      tipo_nf: nullable(form.tipo_nf),
+      nf_numero: nullable(form.nf_numero),
+      data_emissao: nullable(form.data_emissao),
+      data_vencimento: nullable(form.data_vencimento),
+      data_baixa: nullable(form.data_baixa),
+      valor_bruto: num(form.valor_bruto),
+      descontos: num(form.descontos),
+      valor_liquido: Math.max(
+        num(form.valor_bruto) - num(form.descontos),
+        0,
+      ),
+      valor_baixado: num(form.valor_baixado),
+      status: form.status,
+      observacoes: nullable(form.observacoes),
     };
 
-    const { error } = await supabase
-      .from('pagamentos_fornecedor')
-      .update(dados)
-      .eq('id', editFornecedorId);
+    let response;
 
-    if (error) {
-      alert(`Erro ao salvar NF do fornecedor: ${error.message}`);
+    if (editId === 'novo') {
+      response = await supabase
+        .from('faturamentos')
+        .insert([dados])
+        .select()
+        .single();
+    } else {
+      response = await supabase
+        .from('faturamentos')
+        .update(dados)
+        .eq('id', editId)
+        .select()
+        .single();
+    }
+
+    if (response.error) {
+      alert(`Erro ao salvar faturamento: ${response.error.message}`);
       setSaving(false);
       return;
     }
 
-    setPagamentosFornecedor((prev) =>
-      prev.map((item) =>
-        item.id === editFornecedorId ? dados : item,
-      ),
-    );
+    if (editId === 'novo') {
+      setFaturamentos((prev) => [...prev, response.data]);
+    } else {
+      setFaturamentos((prev) =>
+        prev.map((item) =>
+          item.id === editId ? response.data : item,
+        ),
+      );
+    }
 
-    setEditFornecedorId(null);
-    setEditFornecedorData({ ...EMPTY_FORNECEDOR });
+    cancelarEdicao();
     setSaving(false);
   }
 
-  async function deleteFaturamentoFornecedor(id) {
-    if (!confirm('Remover esta NF / despesa do fornecedor?')) return;
+  async function remover(id) {
+    if (!confirm('Remover este faturamento?')) return;
 
     const { error } = await supabase
-      .from('pagamentos_fornecedor')
+      .from('faturamentos')
       .delete()
       .eq('id', id);
 
     if (error) {
-      alert(`Erro ao remover NF: ${error.message}`);
+      alert(`Erro ao remover faturamento: ${error.message}`);
       return;
     }
 
-    setPagamentosFornecedor((prev) =>
+    setFaturamentos((prev) =>
       prev.filter((item) => item.id !== id),
     );
-
-    if (editFornecedorId === id) {
-      setEditFornecedorId(null);
-      setEditFornecedorData({ ...EMPTY_FORNECEDOR });
-    }
   }
 
+  const pagamentosDoFornecedor = useMemo(() => {
+    if (!form.contrato_fornecedor_id) return [];
+
+    return pagamentos.filter(
+      (item) =>
+        item.contrato_fornecedor_id ===
+        form.contrato_fornecedor_id,
+    );
+  }, [pagamentos, form.contrato_fornecedor_id]);
+
+  const filtrados = useMemo(() => {
+    return faturamentos.filter((item) => {
+      const tipoOk =
+        filtroTipo === 'todos' ||
+        item.tipo_movimento === filtroTipo;
+
+      const fornecedorOk =
+        filtroFornecedor === 'todos' ||
+        item.contrato_fornecedor_id === filtroFornecedor;
+
+      const mesOk =
+        !filtroMes || item.competencia === filtroMes;
+
+      return tipoOk && fornecedorOk && mesOk;
+    });
+  }, [faturamentos, filtroTipo, filtroFornecedor, filtroMes]);
+
   const totais = useMemo(() => {
-    const totalBruto = eventos.reduce(
-      (total, item) => total + numberValue(item.valor_bruto),
+    const entradas = faturamentos.filter(
+      (item) => item.tipo_movimento === 'entrada',
+    );
+
+    const saidas = faturamentos.filter(
+      (item) => item.tipo_movimento === 'saida',
+    );
+
+    const faturadoCliente = entradas.reduce(
+      (total, item) => total + num(item.valor_liquido),
       0,
     );
 
-    const totalRecebido = eventos.reduce(
-      (total, item) => total + numberValue(item.valor_recebido),
+    const recebidoCliente = entradas.reduce(
+      (total, item) => total + num(item.valor_baixado),
       0,
     );
 
-    const totalContratadoFornecedor = contratosFornecedor.reduce(
-      (total, item) => total + numberValue(item.valor_contrato),
+    const faturadoFornecedor = saidas.reduce(
+      (total, item) => total + num(item.valor_liquido),
       0,
     );
 
-    const totalFaturadoFornecedor = pagamentosFornecedor.reduce(
-      (total, item) =>
-        total +
-        numberValue(
-          item.valor_liquido ?? item.valor_bruto ?? item.valor,
-        ),
-      0,
-    );
-
-    const totalPagoFornecedor = pagamentosFornecedor.reduce(
-      (total, item) =>
-        total +
-        numberValue(
-          item.valor_pago ??
-            (item.status === 'Pago' ? item.valor || 0 : 0),
-        ),
+    const pagoFornecedor = saidas.reduce(
+      (total, item) => total + num(item.valor_baixado),
       0,
     );
 
     return {
-      totalBruto,
-      totalRecebido,
-      totalPendente: Math.max(totalBruto - totalRecebido, 0),
-      totalContratadoFornecedor,
-      totalFaturadoFornecedor,
-      totalPagoFornecedor,
-      totalPagarFornecedor: Math.max(
-        totalFaturadoFornecedor - totalPagoFornecedor,
-        0,
-      ),
-      resultadoAtual: totalRecebido - totalPagoFornecedor,
+      faturadoCliente,
+      recebidoCliente,
+      aReceber: Math.max(faturadoCliente - recebidoCliente, 0),
+      faturadoFornecedor,
+      pagoFornecedor,
+      aPagar: Math.max(faturadoFornecedor - pagoFornecedor, 0),
+      saldoAtual: recebidoCliente - pagoFornecedor,
     };
-  }, [eventos, contratosFornecedor, pagamentosFornecedor]);
+  }, [faturamentos]);
+
+  const resumoMensalFornecedor = useMemo(() => {
+    if (!filtroMes || filtroFornecedor === 'todos') return null;
+
+    const contrato = fornecedores.find(
+      (item) => item.id === filtroFornecedor,
+    );
+
+    const previstos = pagamentos.filter((item) => {
+      if (item.contrato_fornecedor_id !== filtroFornecedor) {
+        return false;
+      }
+
+      return (
+        item.data_vencimento &&
+        item.data_vencimento.slice(0, 7) === filtroMes
+      );
+    });
+
+    const notas = faturamentos.filter(
+      (item) =>
+        item.tipo_movimento === 'saida' &&
+        item.contrato_fornecedor_id === filtroFornecedor &&
+        item.competencia === filtroMes,
+    );
+
+    const previsto = previstos.reduce(
+      (total, item) => total + num(item.valor),
+      0,
+    );
+
+    const faturado = notas.reduce(
+      (total, item) => total + num(item.valor_liquido),
+      0,
+    );
+
+    const pago = notas.reduce(
+      (total, item) => total + num(item.valor_baixado),
+      0,
+    );
+
+    return {
+      fornecedor: contrato?.fornecedor || 'Fornecedor',
+      previsto,
+      faturado,
+      pago,
+      aPagar: Math.max(faturado - pago, 0),
+      semNota: Math.max(previsto - faturado, 0),
+    };
+  }, [
+    filtroMes,
+    filtroFornecedor,
+    fornecedores,
+    pagamentos,
+    faturamentos,
+  ]);
 
   if (loading) {
-    return (
-      <div style={{ padding: 24, color: C.gray }}>
-        Carregando…
-      </div>
-    );
+    return <div style={{ padding: 24, color: C.gray }}>Carregando…</div>;
   }
 
   return (
     <div style={{ padding: 20 }}>
-      <ResumoFinanceiro
-        titulo="ENTRADAS — CLIENTE"
-        corTitulo={C.cyan}
-        itens={[
-          ['Contrato Total', fmtBRL(contrato?.valor_total), C.white],
-          ['Faturado', fmtBRL(totais.totalBruto), C.cyan],
-          ['Recebido', fmtBRL(totais.totalRecebido), C.green],
-          ['A Receber', fmtBRL(totais.totalPendente), C.amber],
-        ]}
-      />
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.white }}>
+            Faturamento
+          </div>
+          <div style={{ fontSize: 11, color: C.gray, marginTop: 3 }}>
+            Notas de clientes e fornecedores, sem duplicar pagamentos previstos
+          </div>
+        </div>
 
-      <ResumoFinanceiro
-        titulo="SAÍDAS — FORNECEDORES"
-        corTitulo={C.pink}
-        itens={[
-          [
-            'Total Contratado',
-            fmtBRL(totais.totalContratadoFornecedor),
-            C.white,
-          ],
-          [
-            'Faturado',
-            fmtBRL(totais.totalFaturadoFornecedor),
-            C.pink,
-          ],
-          ['Pago', fmtBRL(totais.totalPagoFornecedor), C.green],
-          ['A Pagar', fmtBRL(totais.totalPagarFornecedor), C.amber],
-          [
-            'Resultado Atual',
-            fmtBRL(totais.resultadoAtual),
-            totais.resultadoAtual >= 0 ? C.green : C.red,
-          ],
-        ]}
-      />
-
-      <section style={{ marginTop: 20 }}>
-        <div
+        <button
+          onClick={novoFaturamento}
           style={{
+            ...s.btnPrimary,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            flexWrap: 'wrap',
-            marginBottom: 12,
+            gap: 6,
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.cyan }}>
-            FATURAMENTO PARA O CLIENTE
+          <Plus size={14} />
+          Novo faturamento
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        {[
+          ['Faturado Cliente', totais.faturadoCliente, C.cyan],
+          ['Recebido Cliente', totais.recebidoCliente, C.green],
+          ['A Receber', totais.aReceber, C.amber],
+          ['NF Fornecedores', totais.faturadoFornecedor, C.pink],
+          ['Pago Fornecedores', totais.pagoFornecedor, C.green],
+          ['A Pagar', totais.aPagar, C.amber],
+          [
+            'Saldo Atual',
+            totais.saldoAtual,
+            totais.saldoAtual >= 0 ? C.green : C.red,
+          ],
+        ].map(([label, value, color]) => (
+          <div key={label} style={s.card}>
+            <div
+              style={{
+                fontSize: 9,
+                color: C.gray,
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                marginBottom: 6,
+              }}
+            >
+              {label}
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                color,
+                fontWeight: 700,
+                fontFamily: 'IBM Plex Mono',
+              }}
+            >
+              {fmtBRL(value)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          ...s.panel,
+          padding: 12,
+          marginBottom: 16,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: 10,
+        }}
+      >
+        <div>
+          <label style={s.label}>Tipo</label>
+          <select
+            style={s.input}
+            value={filtroTipo}
+            onChange={(event) => setFiltroTipo(event.target.value)}
+          >
+            <option value="todos">Todos</option>
+            <option value="entrada">Cliente — Entradas</option>
+            <option value="saida">Fornecedor — Saídas</option>
+          </select>
+        </div>
+
+        <div>
+          <label style={s.label}>Fornecedor</label>
+          <select
+            style={s.input}
+            value={filtroFornecedor}
+            onChange={(event) =>
+              setFiltroFornecedor(event.target.value)
+            }
+          >
+            <option value="todos">Todos os fornecedores</option>
+            {fornecedores.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.fornecedor}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label style={s.label}>Mês de referência</label>
+          <input
+            type="month"
+            style={s.input}
+            value={filtroMes}
+            onChange={(event) => setFiltroMes(event.target.value)}
+          />
+        </div>
+      </div>
+
+      {resumoMensalFornecedor && (
+        <div
+          style={{
+            ...s.panel,
+            padding: 12,
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              color: C.pink,
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
+            {resumoMensalFornecedor.fornecedor} — {filtroMes}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(130px, 1fr))',
+              gap: 10,
+            }}
+          >
+            {[
+              ['Previsto', resumoMensalFornecedor.previsto, C.white],
+              ['NF recebidas', resumoMensalFornecedor.faturado, C.pink],
+              ['Pago', resumoMensalFornecedor.pago, C.green],
+              ['A pagar', resumoMensalFornecedor.aPagar, C.amber],
+              ['Sem NF', resumoMensalFornecedor.semNota, C.red],
+            ].map(([label, value, color]) => (
+              <div key={label}>
+                <div style={{ fontSize: 9, color: C.gray }}>
+                  {label}
+                </div>
+                <div
+                  style={{
+                    color,
+                    fontWeight: 700,
+                    fontFamily: 'IBM Plex Mono',
+                  }}
+                >
+                  {fmtBRL(value)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {editId && (
+        <div
+          style={{
+            ...s.panel,
+            padding: 14,
+            marginBottom: 16,
+            background: C.card2,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.white }}>
+              {editId === 'novo'
+                ? 'NOVO FATURAMENTO'
+                : 'EDITAR FATURAMENTO'}
+            </div>
+
+            <button onClick={cancelarEdicao} style={iconButton()}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: 10,
+            }}
+          >
+            <div>
+              <label style={s.label}>Faturamento de</label>
+              <select
+                style={s.input}
+                value={form.tipo_movimento}
+                onChange={(event) =>
+                  alterarCampo('tipo_movimento', event.target.value)
+                }
+              >
+                <option value="entrada">Cliente — Entrada</option>
+                <option value="saida">Fornecedor — Saída</option>
+              </select>
+            </div>
+
+            {form.tipo_movimento === 'saida' && (
+              <>
+                <div>
+                  <label style={s.label}>Fornecedor</label>
+                  <select
+                    style={s.input}
+                    value={form.contrato_fornecedor_id}
+                    onChange={(event) =>
+                      alterarCampo(
+                        'contrato_fornecedor_id',
+                        event.target.value,
+                      )
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    {fornecedores.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.fornecedor}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={s.label}>Pagamento previsto</label>
+                  <select
+                    style={s.input}
+                    value={form.pagamento_fornecedor_id}
+                    onChange={(event) =>
+                      alterarCampo(
+                        'pagamento_fornecedor_id',
+                        event.target.value,
+                      )
+                    }
+                  >
+                    <option value="">Sem vínculo</option>
+                    {pagamentosDoFornecedor.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.evento} — {fmtBRL(item.valor)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            <div>
+              <label style={s.label}>Evento / Medição</label>
+              <input
+                style={s.input}
+                value={form.evento}
+                onChange={(event) =>
+                  alterarCampo('evento', event.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label style={s.label}>Mês de referência</label>
+              <input
+                type="month"
+                style={s.input}
+                value={form.competencia}
+                onChange={(event) =>
+                  alterarCampo('competencia', event.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label style={s.label}>Tipo NF</label>
+              <select
+                style={s.input}
+                value={form.tipo_nf}
+                onChange={(event) =>
+                  alterarCampo('tipo_nf', event.target.value)
+                }
+              >
+                {TIPOS_NF.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+
+            {[
+              ['nf_numero', 'Nº NF', 'text'],
+              ['data_emissao', 'Emissão', 'date'],
+              ['data_vencimento', 'Vencimento', 'date'],
+              ['valor_bruto', 'Valor bruto', 'number'],
+              ['descontos', 'Descontos / retenções', 'number'],
+              ['valor_baixado', 'Recebido / pago', 'number'],
+              ['data_baixa', 'Data recebimento / pagamento', 'date'],
+              ['observacoes', 'Observações', 'text'],
+            ].map(([field, label, type]) => (
+              <div key={field}>
+                <label style={s.label}>{label}</label>
+                <input
+                  type={type}
+                  style={s.input}
+                  value={form[field] || ''}
+                  onChange={(event) =>
+                    alterarCampo(
+                      field,
+                      type === 'number'
+                        ? Number(event.target.value)
+                        : event.target.value,
+                    )
+                  }
+                />
+              </div>
+            ))}
+
+            <div>
+              <label style={s.label}>Valor líquido</label>
+              <input
+                style={s.input}
+                value={fmtBRL(form.valor_liquido)}
+                disabled
+              />
+            </div>
+
+            <div>
+              <label style={s.label}>Status</label>
+              <select
+                style={s.input}
+                value={form.status}
+                onChange={(event) =>
+                  alterarCampo('status', event.target.value)
+                }
+              >
+                {(form.tipo_movimento === 'entrada'
+                  ? STATUS_ENTRADA
+                  : STATUS_SAIDA
+                ).map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button
-              onClick={addEvento}
+              onClick={salvar}
+              disabled={saving}
               style={{
                 ...s.btnPrimary,
                 display: 'flex',
@@ -521,676 +818,141 @@ export default function FaturamentoTab({ obraId }) {
                 gap: 6,
               }}
             >
-              <Plus size={14} />
-              Novo evento
+              <Save size={13} />
+              {saving ? 'Salvando…' : 'Salvar'}
             </button>
 
-            {contrato && eventos.length === 0 && (
-              <button onClick={gerarEventosPadrao} style={s.btnGreen}>
-                Gerar eventos padrão
-              </button>
-            )}
+            <button onClick={cancelarEdicao} style={s.btn}>
+              Cancelar
+            </button>
           </div>
         </div>
+      )}
 
-        <div style={{ ...s.panel, overflowX: 'auto' }}>
-          <table
-            style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              minWidth: 900,
-            }}
-          >
-            <thead>
-              <tr>
-                {[
-                  'Evento',
-                  'Tipo NF',
-                  'Valor Bruto',
-                  'Desc. Adiant.',
-                  'Valor Líquido',
-                  'Nº NF',
-                  'Emissão',
-                  'Vencimento',
-                  'Recebimento',
-                  'Valor Recebido',
-                  'Status',
-                  '',
-                ].map((item) => (
-                  <th key={item} style={s.th}>
-                    {item}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {eventos.map((evento, index) => {
-                const status =
-                  STATUS_FAT[evento.status] || {
-                    bg: C.card2,
-                    fg: C.gray,
-                  };
-
-                const isEdit = editId === evento.id;
-
-                if (isEdit) {
-                  return (
-                    <tr key={evento.id} style={{ background: C.cyanBg }}>
-                      <td colSpan={12} style={{ padding: 12 }}>
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns:
-                              'repeat(auto-fill, minmax(160px, 1fr))',
-                            gap: 10,
-                          }}
-                        >
-                          {[
-                            ['evento', 'Evento', 'text'],
-                            ['tipo_nf', 'Tipo NF', 'select'],
-                            ['valor_bruto', 'Valor Bruto', 'number'],
-                            ['nf_numero', 'Nº NF', 'text'],
-                            ['data_emissao', 'Data Emissão', 'date'],
-                            ['data_envio_portal', 'Envio Portal', 'date'],
-                            ['data_vencimento', 'Vencimento', 'date'],
-                            ['data_recebimento', 'Recebimento', 'date'],
-                            [
-                              'valor_recebido',
-                              'Valor Recebido',
-                              'number',
-                            ],
-                            ['status', 'Status', 'status'],
-                            ['observacoes', 'Observações', 'text'],
-                          ].map(([field, label, type]) => (
-                            <div key={field}>
-                              <label style={s.label}>{label}</label>
-
-                              {type === 'select' ? (
-                                <select
-                                  style={s.input}
-                                  value={editData[field] || ''}
-                                  onChange={(event) =>
-                                    setEditData((prev) => ({
-                                      ...prev,
-                                      [field]: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  {TIPOS_NF_CLIENTE.map((item) => (
-                                    <option key={item}>{item}</option>
-                                  ))}
-                                </select>
-                              ) : type === 'status' ? (
-                                <select
-                                  style={s.input}
-                                  value={editData[field] || ''}
-                                  onChange={(event) =>
-                                    setEditData((prev) => ({
-                                      ...prev,
-                                      [field]: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  {Object.keys(STATUS_FAT).map((item) => (
-                                    <option key={item}>{item}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  type={type}
-                                  style={s.input}
-                                  value={editData[field] || ''}
-                                  onChange={(event) =>
-                                    setEditData((prev) => ({
-                                      ...prev,
-                                      [field]:
-                                        type === 'number'
-                                          ? Number(event.target.value)
-                                          : event.target.value,
-                                    }))
-                                  }
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: 8,
-                            marginTop: 12,
-                          }}
-                        >
-                          <button
-                            onClick={saveEdit}
-                            disabled={saving}
-                            style={{
-                              ...s.btnPrimary,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6,
-                            }}
-                          >
-                            <Save size={13} />
-                            {saving ? 'Salvando…' : 'Salvar'}
-                          </button>
-
-                          <button
-                            onClick={() => setEditId(null)}
-                            style={s.btn}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                return (
-                  <tr
-                    key={evento.id}
-                    style={{
-                      background: index % 2 === 0 ? C.bg : C.card2,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => startEdit(evento)}
-                  >
-                    <td
-                      style={{
-                        ...s.td,
-                        fontWeight: 600,
-                        color: C.white,
-                      }}
-                    >
-                      {evento.evento}
-                    </td>
-                    <td style={{ ...s.td, fontSize: 11, color: C.gray }}>
-                      {evento.tipo_nf || '—'}
-                    </td>
-                    <td style={moneyCell()}>
-                      {fmtBRL(evento.valor_bruto)}
-                    </td>
-                    <td style={moneyCell(C.amber)}>
-                      {fmtBRL(evento.desconto_adiantamento)}
-                    </td>
-                    <td style={moneyCell(C.green, true)}>
-                      {fmtBRL(evento.valor_liquido)}
-                    </td>
-                    <td
-                      style={{
-                        ...s.td,
-                        fontFamily: 'IBM Plex Mono',
-                        color: C.cyan,
-                      }}
-                    >
-                      {evento.nf_numero || '—'}
-                    </td>
-                    <td style={s.td}>{fmtDate(evento.data_emissao)}</td>
-                    <td style={s.td}>
-                      {fmtDate(evento.data_vencimento)}
-                    </td>
-                    <td style={{ ...s.td, color: C.green }}>
-                      {fmtDate(evento.data_recebimento)}
-                    </td>
-                    <td style={moneyCell(C.green)}>
-                      {fmtBRL(evento.valor_recebido)}
-                    </td>
-                    <td style={s.td}>
-                      <span style={s.badge(status.bg, status.fg)}>
-                        {evento.status}
-                      </span>
-                    </td>
-                    <td style={s.td}>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          deleteEvento(evento.id);
-                        }}
-                        style={iconButton()}
-                        title="Remover evento"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {eventos.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={12}
-                    style={{
-                      ...s.td,
-                      textAlign: 'center',
-                      color: C.gray,
-                      padding: 32,
-                    }}
-                  >
-                    Nenhum evento de faturamento cadastrado.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section style={{ marginTop: 24 }}>
-        <div
+      <div style={{ ...s.panel, overflowX: 'auto' }}>
+        <table
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            flexWrap: 'wrap',
-            marginBottom: 12,
+            width: '100%',
+            borderCollapse: 'collapse',
+            minWidth: 1000,
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.pink }}>
-            FATURAMENTO DOS FORNECEDORES
-          </div>
-
-          <button
-            onClick={adicionarFaturamentoFornecedor}
-            style={{
-              ...s.btnPrimary,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <Plus size={14} />
-            Nova NF / Despesa
-          </button>
-        </div>
-
-        <div style={{ ...s.panel, overflowX: 'auto' }}>
-          <table
-            style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              minWidth: 900,
-            }}
-          >
-            <thead>
-              <tr>
-                {[
-                  'Fornecedor',
-                  'Evento / Medição',
-                  'Tipo NF',
-                  'Nº NF',
-                  'Emissão',
-                  'Vencimento',
-                  'Valor Líquido',
-                  'Pago',
-                  'Status',
-                  '',
-                ].map((item) => (
-                  <th key={item} style={s.th}>
-                    {item}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {pagamentosFornecedor.map((pagamento, index) => {
-                const fornecedor = contratosFornecedor.find(
-                  (item) =>
-                    item.id === pagamento.contrato_fornecedor_id,
-                );
-
-                const status =
-                  STATUS_PAG?.[pagamento.status] || {
-                    bg: C.card2,
-                    fg:
-                      pagamento.status === 'Pago'
-                        ? C.green
-                        : C.amber,
-                  };
-
-                return (
-                  <tr
-                    key={pagamento.id}
-                    style={{
-                      background: index % 2 === 0 ? C.bg : C.card2,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() =>
-                      iniciarEdicaoFornecedor(pagamento)
-                    }
-                  >
-                    <td
-                      style={{
-                        ...s.td,
-                        fontWeight: 600,
-                        color: C.white,
-                      }}
-                    >
-                      {fornecedor?.fornecedor || '—'}
-                    </td>
-                    <td style={s.td}>{pagamento.evento || '—'}</td>
-                    <td style={{ ...s.td, color: C.gray }}>
-                      {pagamento.tipo_nf || '—'}
-                    </td>
-                    <td
-                      style={{
-                        ...s.td,
-                        fontFamily: 'IBM Plex Mono',
-                        color: C.cyan,
-                      }}
-                    >
-                      {pagamento.nf_numero || '—'}
-                    </td>
-                    <td style={s.td}>
-                      {fmtDate(pagamento.data_emissao)}
-                    </td>
-                    <td style={s.td}>
-                      {fmtDate(pagamento.data_vencimento)}
-                    </td>
-                    <td style={moneyCell(C.pink)}>
-                      {fmtBRL(
-                        pagamento.valor_liquido ??
-                          pagamento.valor ??
-                          0,
-                      )}
-                    </td>
-                    <td style={moneyCell(C.green)}>
-                      {fmtBRL(
-                        pagamento.valor_pago ??
-                          (pagamento.status === 'Pago'
-                            ? pagamento.valor || 0
-                            : 0),
-                      )}
-                    </td>
-                    <td style={s.td}>
-                      <span style={s.badge(status.bg, status.fg)}>
-                        {pagamento.status || 'Pendente'}
-                      </span>
-                    </td>
-                    <td style={s.td}>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          deleteFaturamentoFornecedor(pagamento.id);
-                        }}
-                        style={iconButton()}
-                        title="Remover NF / despesa"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {pagamentosFornecedor.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={10}
-                    style={{
-                      ...s.td,
-                      textAlign: 'center',
-                      color: C.gray,
-                      padding: 32,
-                    }}
-                  >
-                    Nenhuma NF ou despesa de fornecedor cadastrada.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {editFornecedorId && (
-          <div
-            style={{
-              ...s.panel,
-              marginTop: 12,
-              padding: 16,
-              background: C.card2,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: C.pink,
-                marginBottom: 12,
-              }}
-            >
-              EDITAR NF / DESPESA DO FORNECEDOR
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  'repeat(auto-fill, minmax(160px, 1fr))',
-                gap: 10,
-              }}
-            >
-              <div>
-                <label style={s.label}>Fornecedor</label>
-                <select
-                  style={s.input}
-                  value={
-                    editFornecedorData.contrato_fornecedor_id || ''
-                  }
-                  onChange={(event) =>
-                    setEditFornecedorData((prev) => ({
-                      ...prev,
-                      contrato_fornecedor_id: event.target.value,
-                    }))
-                  }
-                >
-                  {contratosFornecedor.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.fornecedor}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={s.label}>Evento / Medição</label>
-                <input
-                  style={s.input}
-                  value={editFornecedorData.evento || ''}
-                  onChange={(event) =>
-                    setEditFornecedorData((prev) => ({
-                      ...prev,
-                      evento: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-
-              <div>
-                <label style={s.label}>Tipo NF</label>
-                <select
-                  style={s.input}
-                  value={editFornecedorData.tipo_nf || 'Serviço'}
-                  onChange={(event) =>
-                    setEditFornecedorData((prev) => ({
-                      ...prev,
-                      tipo_nf: event.target.value,
-                    }))
-                  }
-                >
-                  {TIPOS_NF_FORNECEDOR.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </div>
-
+          <thead>
+            <tr>
               {[
-                ['nf_numero', 'Nº NF', 'text'],
-                ['data_emissao', 'Emissão', 'date'],
-                ['data_vencimento', 'Vencimento', 'date'],
-                ['valor_bruto', 'Valor Bruto', 'number'],
-                ['descontos', 'Retenções / Descontos', 'number'],
-                ['valor_pago', 'Valor Pago', 'number'],
-                ['data_pagamento', 'Data Pagamento', 'date'],
-                ['observacoes', 'Observações', 'text'],
-              ].map(([field, label, type]) => (
-                <div key={field}>
-                  <label style={s.label}>{label}</label>
-                  <input
-                    type={type}
-                    style={s.input}
-                    value={editFornecedorData[field] || ''}
-                    onChange={(event) =>
-                      setEditFornecedorData((prev) => ({
-                        ...prev,
-                        [field]:
-                          type === 'number'
-                            ? Number(event.target.value)
-                            : event.target.value,
-                      }))
-                    }
-                  />
-                </div>
+                'Tipo',
+                'Cliente / Fornecedor',
+                'Evento / Medição',
+                'Mês',
+                'Nº NF',
+                'Valor líquido',
+                'Vencimento',
+                'Recebido / Pago',
+                'Status',
+                '',
+              ].map((item) => (
+                <th key={item} style={s.th}>
+                  {item}
+                </th>
               ))}
+            </tr>
+          </thead>
 
-              <div>
-                <label style={s.label}>Status</label>
-                <select
-                  style={s.input}
-                  value={editFornecedorData.status || 'Pendente'}
-                  onChange={(event) =>
-                    setEditFornecedorData((prev) => ({
-                      ...prev,
-                      status: event.target.value,
-                    }))
-                  }
-                >
-                  {Object.keys(STATUS_PAG || {}).length > 0 ? (
-                    Object.keys(STATUS_PAG).map((item) => (
-                      <option key={item}>{item}</option>
-                    ))
-                  ) : (
-                    <>
-                      <option>Pendente</option>
-                      <option>Pago</option>
-                      <option>Atrasado</option>
-                      <option>Parcial</option>
-                    </>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                marginTop: 12,
-              }}
-            >
-              <button
-                onClick={salvarFaturamentoFornecedor}
-                disabled={saving}
+          <tbody>
+            {filtrados.map((item, index) => (
+              <tr
+                key={item.id}
                 style={{
-                  ...s.btnPrimary,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
+                  background: index % 2 === 0 ? C.bg : C.card2,
+                  cursor: 'pointer',
                 }}
+                onClick={() => editarFaturamento(item)}
               >
-                <Save size={13} />
-                {saving ? 'Salvando…' : 'Salvar'}
-              </button>
+                <td style={s.td}>
+                  <span
+                    style={{
+                      ...s.badge(
+                        item.tipo_movimento === 'entrada'
+                          ? C.cyanBg
+                          : C.card2,
+                        item.tipo_movimento === 'entrada'
+                          ? C.cyan
+                          : C.pink,
+                      ),
+                    }}
+                  >
+                    {item.tipo_movimento === 'entrada'
+                      ? 'Cliente'
+                      : 'Fornecedor'}
+                  </span>
+                </td>
 
-              <button
-                onClick={() => {
-                  setEditFornecedorId(null);
-                  setEditFornecedorData({ ...EMPTY_FORNECEDOR });
-                }}
-                style={s.btn}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
+                <td style={{ ...s.td, fontWeight: 600 }}>
+                  {item.cliente_fornecedor || '—'}
+                </td>
+
+                <td style={s.td}>{item.evento}</td>
+                <td style={s.td}>{item.competencia || '—'}</td>
+                <td style={s.td}>{item.nf_numero || '—'}</td>
+
+                <td style={moneyCell(
+                  item.tipo_movimento === 'entrada' ? C.cyan : C.pink,
+                )}>
+                  {fmtBRL(item.valor_liquido)}
+                </td>
+
+                <td style={s.td}>{fmtDate(item.data_vencimento)}</td>
+
+                <td style={moneyCell(C.green)}>
+                  {fmtBRL(item.valor_baixado)}
+                </td>
+
+                <td style={s.td}>{item.status}</td>
+
+                <td style={s.td}>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      remover(item.id);
+                    }}
+                    style={iconButton()}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+
+            {filtrados.length === 0 && (
+              <tr>
+                <td
+                  colSpan={10}
+                  style={{
+                    ...s.td,
+                    textAlign: 'center',
+                    color: C.gray,
+                    padding: 32,
+                  }}
+                >
+                  Nenhum faturamento encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function ResumoFinanceiro({ titulo, corTitulo, itens }) {
-  return (
-    <section style={{ marginBottom: 16 }}>
-      <div
-        style={{
-          fontSize: 11,
-          color: corTitulo,
-          fontWeight: 700,
-          marginBottom: 8,
-        }}
-      >
-        {titulo}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
-        {itens.map(([label, value, color]) => (
-          <div
-            key={label}
-            style={{
-              ...s.card,
-              flex: '1 1 150px',
-              minWidth: 150,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 10,
-                color: C.gray,
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                marginBottom: 6,
-              }}
-            >
-              {label}
-            </div>
-
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color,
-                fontFamily: 'IBM Plex Mono',
-              }}
-            >
-              {value}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function moneyCell(color = C.light, bold = false) {
+function moneyCell(color) {
   return {
     ...s.td,
     textAlign: 'right',
     fontFamily: 'IBM Plex Mono',
     fontSize: 12,
     color,
-    fontWeight: bold ? 700 : 400,
+    fontWeight: 700,
   };
 }
 
