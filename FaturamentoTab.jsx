@@ -266,20 +266,16 @@ export default function FaturamentoTab({ obraId }) {
     setEventos((prev) => prev.filter((item) => item.id !== id));
   }
 
-  async function adicionarFaturamentoFornecedor() {
-    const primeiroContrato = contratosFornecedor[0];
-
-    if (!primeiroContrato) {
-      alert('Cadastre primeiro um fornecedor na aba Fornecedores.');
-      return;
-    }
-
-    const novo = {
-      ...EMPTY_FORNECEDOR,
-      obra_id: obraId,
-      contrato_fornecedor_id: primeiroContrato.id,
-      evento: 'Nova NF / Despesa',
-      valor: 0,
+ const novo = {
+  ...EMPTY_FORNECEDOR,
+  obra_id: obraId,
+  contrato_fornecedor_id: primeiroContrato.id,
+  evento: 'Nova NF / Despesa',
+  data_emissao: null,
+  data_vencimento: null,
+  data_pagamento: null,
+  valor: 0,
+};
     };
 
     const { data, error } = await supabase
