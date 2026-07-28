@@ -62,7 +62,7 @@ function nullable(value) {
   return value === '' || value === undefined ? null : value;
 }
 
-export default function FaturamentoTab({ obraId, obra }) {
+export default function FaturamentoTab({ obraId }) {
   const [faturamentos, setFaturamentos] = useState([]);
   const [contratoCliente, setContratoCliente] = useState(null);
   const [fornecedores, setFornecedores] = useState([]);
@@ -135,7 +135,7 @@ export default function FaturamentoTab({ obraId, obra }) {
     setForm({
       ...EMPTY_FORM,
       tipo_movimento: 'entrada',
-      cliente_fornecedor: obra?.cliente || obra?.dona_obra || 'Cliente',
+      cliente_fornecedor: contratoCliente?.cliente || 'Cliente',
     });
   }
 
@@ -177,7 +177,7 @@ export default function FaturamentoTab({ obraId, obra }) {
         next.pagamento_fornecedor_id = '';
         next.cliente_fornecedor =
           value === 'entrada'
-            ? obra?.cliente || obra?.dona_obra || 'Cliente'
+            ? contratoCliente?.cliente || 'Cliente'
             : '';
       }
 
@@ -463,6 +463,36 @@ export default function FaturamentoTab({ obraId, obra }) {
           <Plus size={14} />
           Novo faturamento
         </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+        {[
+          {
+            title: 'FLUXO — CLIENTE',
+            color: C.cyan,
+            steps: ['Evento', 'Nota a emitir', 'NF emitida', 'A receber', 'Recebido'],
+          },
+          {
+            title: 'FLUXO — FORNECEDOR',
+            color: C.amber,
+            steps: ['Medição', 'A liberar', 'NF recebida', 'A pagar', 'Pago'],
+          },
+        ].map((flow) => (
+          <div key={flow.title} style={{ ...s.panel, padding: 12 }}>
+            <div style={{ color: flow.color, fontSize: 10, fontWeight: 700, marginBottom: 10 }}>{flow.title}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, alignItems: 'center' }}>
+              {flow.steps.map((step, index) => (
+                <div key={step} style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', margin: '0 auto 5px', display: 'grid', placeItems: 'center', background: C.bg, border: `1px solid ${index === 1 ? flow.color : C.border}`, color: index === 1 ? flow.color : C.gray, fontSize: 10, fontWeight: 700 }}>{index + 1}</div>
+                    <div style={{ color: index === 1 ? flow.color : C.light, fontSize: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step}</div>
+                  </div>
+                  {index < flow.steps.length - 1 && <div style={{ width: 14, height: 1, background: C.border, margin: '0 2px' }} />}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div
