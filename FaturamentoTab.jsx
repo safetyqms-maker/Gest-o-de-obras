@@ -12,6 +12,7 @@ const EMPTY_FORM = {
   competencia: '',
   tipo_nf: 'Serviço',
   nf_numero: '',
+  data_prevista_emissao: '',
   data_emissao: '',
   data_vencimento: '',
   data_baixa: '',
@@ -146,6 +147,7 @@ export default function FaturamentoTab({ obraId }) {
       ...item,
       contrato_fornecedor_id: item.contrato_fornecedor_id || '',
       pagamento_fornecedor_id: item.pagamento_fornecedor_id || '',
+      data_prevista_emissao: item.data_prevista_emissao || '',
       data_emissao: item.data_emissao || '',
       data_vencimento: item.data_vencimento || '',
       data_baixa: item.data_baixa || '',
@@ -235,6 +237,7 @@ export default function FaturamentoTab({ obraId }) {
       competencia: nullable(form.competencia),
       tipo_nf: nullable(form.tipo_nf),
       nf_numero: nullable(form.nf_numero),
+      data_prevista_emissao: nullable(form.data_prevista_emissao),
       data_emissao: nullable(form.data_emissao),
       data_vencimento: nullable(form.data_vencimento),
       data_baixa: nullable(form.data_baixa),
@@ -783,6 +786,9 @@ export default function FaturamentoTab({ obraId }) {
 
             {[
               ['nf_numero', 'Nº NF', 'text'],
+              ...(form.tipo_movimento === 'entrada'
+                ? [['data_prevista_emissao', 'Previsão de emissão', 'date']]
+                : []),
               ['data_emissao', 'Emissão', 'date'],
               ['data_vencimento', 'Vencimento', 'date'],
               ['valor_bruto', 'Valor bruto', 'number'],

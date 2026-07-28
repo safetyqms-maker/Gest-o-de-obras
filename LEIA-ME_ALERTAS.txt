@@ -1,0 +1,29 @@
+ATUALIZAÇÃO — ADMINISTRAÇÃO E ALERTAS
+
+ARQUIVOS NOVOS:
+- Administracao.jsx
+- NotificationBell.jsx
+- ATUALIZAR_SUPABASE_ALERTAS.sql
+- CONFIGURAR_EMAIL_ALERTAS.md
+- supabase/functions/enviar-alertas-email/index.ts
+
+ARQUIVOS ALTERADOS:
+- Layout.jsx
+- main.jsx
+- FaturamentoTab.jsx (inclui Previsão de emissão)
+
+ORDEM:
+1. Execute ATUALIZAR_SUPABASE_ALERTAS.sql no SQL Editor do Supabase.
+2. Substitua/adicione os arquivos no GitHub.
+3. Faça commit na branch main.
+4. Aguarde o Vercel e atualize com Ctrl+F5.
+5. Abra Administração no rodapé do menu lateral e configure os prazos.
+
+FUNCIONA IMEDIATAMENTE:
+- Sino de notificações.
+- Alertas dentro da plataforma.
+- Rotina automática de verificação a cada hora no banco.
+- Botão para verificar alertas agora.
+
+CONFIGURAÇÃO ADICIONAL:
+- Para envio real de e-mails, siga CONFIGURAR_EMAIL_ALERTAS.md.

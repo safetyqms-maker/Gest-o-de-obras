@@ -1,11 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Layout from './Layout.jsx';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import Administracao from './Administracao.jsx';
 import Dashboard from './Dashboard.jsx';
-import Obras from './Obras.jsx';
-import ObraDetalhe from './ObraDetalhe.jsx';
 import Financeiro from './Financeiro.jsx';
+import Layout from './Layout.jsx';
+import ObraDetalhe from './ObraDetalhe.jsx';
+import Obras from './Obras.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -16,9 +17,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="obras" element={<Obras />} />
           <Route path="obras/:id" element={<ObraDetalhe />} />
           <Route path="financeiro" element={<Financeiro />} />
+          <Route path="administracao" element={<Administracao />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
