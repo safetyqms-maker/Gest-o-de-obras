@@ -602,10 +602,9 @@ export default function Dashboard() {
       0,
     );
 
-    const totalPagoFornecedor = saidas.reduce(
-      (sum, item) => sum + num(item.valor_baixado),
-      0,
-    );
+    const totalPagoFornecedor = pagamentosFiltrados
+      .filter((item) => item.status === 'Pago')
+      .reduce((sum, item) => sum + num(item.valor), 0);
 
     const totalPrevistoFornecedor = pagamentosFiltrados.reduce(
       (sum, item) => sum + num(item.valor),
@@ -751,9 +750,13 @@ export default function Dashboard() {
     );
 
     const pagoFornecedor = meses.map(({ key }) =>
-      dados.saidas
-        .filter((item) => monthKey(item.data_baixa) === key)
-        .reduce((sum, item) => sum + num(item.valor_baixado), 0),
+      dados.pagamentosFiltrados
+        .filter(
+          (item) =>
+            item.status === 'Pago' &&
+            monthKey(item.data_pagamento) === key,
+        )
+        .reduce((sum, item) => sum + num(item.valor), 0),
     );
 
     const previstoFornecedor = meses.map(({ key }) =>
@@ -994,7 +997,7 @@ export default function Dashboard() {
           value={fmtBRL(dados.totalPagoFornecedor)}
           color={C.pink}
           Icon={WalletCards}
-          detail={`${pctPago.toFixed(1)}% do previsto`}
+          detail={`${pctPago.toFixed(1)}% dos pagamentos previstos`}
           progress={pctPago}
         />
 
@@ -1300,10 +1303,9 @@ export default function Dashboard() {
                   0,
                 );
 
-                const pagoFornecedor = saidaObra.reduce(
-                  (sum, item) => sum + num(item.valor_baixado),
-                  0,
-                );
+                const pagoFornecedor = pagamentosObra
+                  .filter((item) => item.status === 'Pago')
+                  .reduce((sum, item) => sum + num(item.valor), 0);
 
                 const previstoFornecedor = pagamentosObra.reduce(
                   (sum, item) => sum + num(item.valor),
